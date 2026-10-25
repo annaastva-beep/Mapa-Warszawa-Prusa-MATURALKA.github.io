@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Warszawa Prusa - MATURALKA </title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Lora:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #020617;
+            font-family: 'Inter', sans-serif;
+            color: white;
+            touch-action: none; /* Zapobiega przypadkowemu gestowi cofania w przeglądarce mobilnej */
+        }
+
+        #viewport {
+            width: 100vw;
+            height: 100vh;
+            cursor: grab;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, #1e293b 0%, #020617 100%);
+            touch-action: none;
+        }
+
+        #viewport:active { cursor: grabbing; }
+
+        #map-container {
+            position: relative;
+            transform-origin: center;
+            transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #map-image {
+            display: block;
+            max-height: 120vh;
+            width: auto;
+            box-shadow: 0 0 60px rgba(0,0,0,0.8);
+            border-radius: 4px;
+        }
+
+        #train-gif {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 45;
+        }
+
+        .pawn {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: left 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), 
+                        top 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            box-shadow: 0 0 20px rgba(37, 99, 235, 0.6);
+            pointer-events: none;
+        }
+
+        .poi-red {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle at 30% 30%, rgba(0, 77, 102, 0.1), rgba(0, 128, 128, 0.1));
+            border: none;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            z-index: 50;
+            box-shadow: 0 0 10px rgba(0, 128, 128, 0.3), inset 0 0 5px rgba(0,0,0,0.2);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .poi-red::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: rgba(0, 128, 128, 0.2);
+            transform: translate(-50%, -50%);
+            animation: pulse-ring 2.5s infinite;
+            z-index: -1;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+            100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+        }
+
+        .poi-red:hover { 
+            transform: translate(-50%, -50%) scale(1.4); 
+            background: radial-gradient(circle at 30% 30%, rgba(0, 128, 128, 0.9), rgba(0, 77, 102, 0.9));
+            box-shadow: 0 0 20px rgba(0, 77, 102, 0.7);
+        }
+
+        .poi-red.active {
+            background: rgba(0, 77, 102, 0.9);
+            box-shadow: 0 0 25px rgba(0, 77, 102, 0.6);
+        }
+
+        .poi-red.active::before {
+            animation: none;
+            opacity: 0;
+        }
+
+        .info-bubble {
+            position: absolute;
+            bottom: calc(100% + 15px);
+            left: 50%;
+            transform: translateX(-50%) scale(0.9);
+            width: 240px;
+            max-width: 75vw;
+            background: rgba(15, 23, 42, 0.98);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 14px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+            pointer-events: none;
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 150;
+        }
+
+        .info-bubble::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 8px;
+            border-style: solid;
+            border-color: rgba(15, 23, 42, 0.98) transparent transparent transparent;
+        }
+
+        .poi-red.active .info-bubble {
+            opacity: 1;
+            transform: translateX(-50%) scale(1);
+            pointer-events: auto;
+        }
+
+        .sidebar {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 260px;
+            max-height: 60vh;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            z-index: 200;
+            padding: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .brand-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .brand-square {
+            width: 32px;
+            height: 32px;
+            background-color: #ffa600;
+            flex-shrink: 0;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 14px;
+            color: white;
+        }
+
+        .brand-text-wrapper {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .brand-title {
+            color: white;
+            font-weight: 800;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            line-height: 1;
+        }
+
+        .brand-subtitle {
+            color: #ef4444;
+            font-size: 8px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 4px;
+        }
+
+        .place-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .place-card:hover { background: rgba(255, 255, 255, 0.06); transform: translateX(3px); }
+
+        .place-card.active {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .place-title { font-weight: 600; font-size: 12px; color: #f1f5f9; }
+
+        .controls-ui {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            z-index: 300;
+        }
+
+        .control-btn {
+            width: 38px;
+            height: 38px;
+            background: rgba(15, 23, 42, 0.9);
+            border-radius: 8px;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .side-panel {
+            position: absolute;
+            top: 0;
+            right: -400px;
+            width: 380px;
+            height: 100vh;
+            background: rgba(15, 23, 42, 0.98);
+            backdrop-filter: blur(20px);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 500;
+            padding: 40px 24px;
+            transition: right 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+            overflow-y: auto;
+            box-shadow: -20px 0 50px rgba(0,0,0,0.5);
+            touch-action: pan-y;
+        }
+
+        .side-panel.open {
+            right: 0;
+        }
+
+        .text-block {
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .volume-header {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: #60a5fa;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .chapter-header {
+            font-size: 22px;
+            font-weight: 800;
+            color: #ffffff;
+            margin-bottom: 16px;
+            line-height: 1.2;
+        }
+
+        .quote-content {
+            font-family: 'Lora', serif;
+            line-height: 1.85;
+            color: #e2e8f0;
+            font-size: 17px;
+            font-weight: 400;
+            text-wrap: pretty;
+        }
+
+        .quote-content em, .quote-content i {
+            font-style: italic;
+            color: #cbd5e1;
+        }
+
+        .close-panel-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            cursor: pointer;
+            font-size: 28px;
+            color: #94a3b8;
+            transition: color 0.2s;
+            z-index: 10;
+        }
+
+        .close-panel-btn:hover { color: white; }
+
+        .read-more-btn {
+            margin-top: 10px;
+            display: inline-block;
+            color: #3b82f6;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            cursor: pointer;
+            border-bottom: 1px dashed #3b82f6;
+        }
+
+        .read-more-btn:hover { color: #60a5fa; border-color: #60a5fa; }
+
+        /* Styles dla ekranów mobilnych (telefony) */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: calc(100vw - 30px);
+                max-height: 25vh;
+                left: 15px;
+                bottom: 15px;
+                padding: 12px;
+            }
+
+            .side-panel {
+                width: 100vw;
+                right: -100vw;
+                padding: 35px 20px;
+            }
+
+            .side-panel.open {
+                right: 0;
+            }
+
+            .controls-ui {
+                top: 15px;
+                right: 15px;
+            }
+
+            .info-bubble {
+                width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="viewport">
+    <div id="map-container">
+        <img src="MAPA MATURALKA3.jpg" id="map-image" alt="Map" onclick="handleMapClick(event)">
+        <img src="Безымянный-4.gif" id="train-gif" alt="Pociąg">
+        <div id="pois-layer"></div>
+        <div id="pawn" class="pawn">♟</div>
+    </div>
+</div>
+
+<div class="sidebar">
+    <div class="brand-header">
+        <div class="brand-square">🎩</div>
+        <div class="brand-text-wrapper">
+            <div class="brand-title">WARSZAWA PRUSA</div>
+            <div class="brand-subtitle">PROJEKT MATURALKA</div>
+        </div>
+    </div>
+    <div id="legend-list" class="overflow-y-auto pr-1"></div>
+</div>
+
+<div class="controls-ui">
+    <button class="control-btn" onclick="zoom(0.3)">➕</button>
+    <button class="control-btn" onclick="zoom(-0.2)">➖</button>
+    <button class="control-btn" onclick="resetMap()">📌</button>
+</div>
+
+<div id="side-panel" class="side-panel">
+    <div class="close-panel-btn" onclick="closeSidePanel()">✕</div>
+    <div id="panel-content">
+        <div id="panel-category" style="color: #ef4444; font-weight: 800; font-size: 12px; text-transform: uppercase; margin-bottom: 8px;">MIEJSCE</div>
+        <h2 id="panel-title" style="font-size: 24px; font-weight: 800; margin-bottom: 20px;">Tytuł</h2>
+        <div id="panel-text" style="color: #cbd5e1; line-height: 1.8; font-size: 15px;">Treść...</div>
+    </div>
+</div>
+
+<script>
+    const pointsOfInterest = [
+
+ // --- MEJSCA I FRAGMENTY Z LEKTURY ---
+
+        { x: 21.1, y: 10.7, title: "Dawny sklep Jana Mincla", text: "TOM I Rozdział III pt. Pamiętnik starego subiekta: „Wnętrze sklepu wyglądało jak duża piwnica, które końca nigdy nie mogłem do rzeć z powodu ciemności. (...) Wiem tylko, że po pieprz, kawę i liście bobkowe szło się na lewo do stołu, za którym stały ogromne szafy od sklepienia do podłogi napełnione szufladami. (...) Nawet sklepienie było za ęte. Wisiały tam długie szeregi pęcherzy naładowanych gorczycą i farbami, ogromna lampa z daszkiem (...) wreszcie — wypchany krokodylek, długi może na półtora łokcia.”" },
+
+        { x: 23.0, y: 15.6, title: "Sąd przy Miodowej 15", text: "TOM I rozdział  XVIII pt. Zdumienia, przywidzenia i obserwacje starego subiekta: „Jest ich czterech: adwokat baronowej, okazały pan, stary Szlangbaum i zniszczony Żydek, obok którego stoi zakrystian. — Sześćdziesiąt tysięcy i pięćset rubli — mówi cicho adwokat pani Krzeszowskiej. — Dalibóg! więcej nie warto… — wtrąca jegomość z miną łajdaka. Baronowa triumfalnie spogląda na pana Łęckiego. — Sześćdziesiąt pięć… — odzywa się majestatyczny pan. — Sześćdziesiąt pięć tysięcy i sto rubli — bełkocze blady Żydek. — Sześćdziesiąt sześć… — dodaje Szlangbaum. — Siedemdziesiąt tysięcy! — wrzeszczy zakrystian. — Ach! ach! ach!… — wybucha płaczem baronowa, upadając na wyplataną kanapkę. [...] — Osiemdziesiąt tysięcy i sto rubli… — Osiemdziesiąt pięć… — wtrąca Szlangbaum. [...] — Osiemdziesiąt osiem tysięcy… — Osiemdziesiąt osiem i sto rubli — mówi mizerny Żydek. — Niech będzie dziewięćdziesiąt — kończy stary Szlangbaum, uderzając ręką w stół. — Dziewięćdziesiąt tysięcy — mówi komornik — po raz pierwszy… [...] — Dziewięćdziesiąt tysięcy rubli po raz… trzeci!… — powtarza komornik i uderza małym młotkiem o zielone sukno. — Szlangbaum kupił!… — odzywa się jakiś głos na sali.” TOM II rozdział IX pt. Pamiętnik starego subiekta: „— Jaki pan ma dowód, że ta lalka jest kupiona u pana? — spytał sędzia. (...) — Gdzie pani swoję lalkę kupiła? — spytał baronowę Wokulski. — U Lessera. — Więc mamy dowód — rzekł Wokulski. — Lalki takie sprowadzałem z zagranicy w kawałkach: oddzielnie głowy, oddzielnie korpusy. Niech więc pan sędzia odpruje głowę, a wewnątrz znajdzie moję firmę”. „Tymczasem głowa Mimi spadła na papiery. Sędzia spojrzał wewnątrz i, podając maskę pani baronowej, rzekł: — Nu, niech pani przeczyta, co tam napisano? Baronowa przycięła usta i milczała. — To niech pan Maruszewicz przeczyta głośno, co tam jest? — Jan Mincel i Stanisław Wokulski… — jęknął Maruszewicz”. „— Teraz panna nam powie, co to było z lalką? Tylko proszę prawdę, bo panna stanie do przysięgi… (...) — Lalka stukła się, panie… — Ta wasza lalka, od pani Krzeszowskiej?… — Ta… — Nu, to stukła się jej tylko głowa, a reszta gdzie?… — Na strychu, panie… O, co ja będę miała!” „Kazano nam wstać i usłyszeliśmy wyrok zupełnie uniewinniający panią Stawską. — Teraz — zakończył sędzia, skończywszy czytanie — może pani podać skargę o potwarz. Zeszedł na salę, uścisnął za rękę panią Stawską i dodał: — Bardzo mi przykro, żem panią sądził, i bardzo mi przyjemnie, że mogę powinszować”." },
+
+        { x: 36.5, y: 14.0, title: "Kolumna Zygmunta III Wazy", text: "" },
+
+        { x: 32.5, y: 20.0, title: "Winiarnia - U Hopfera", text: "TOM I rozdział IV pt. Pamiętnik starego subiekta: „Siedząc na krześle w jadalnym pokoju słyszałem jakiś hałas, śmiechy chłopców i gości, alem nie podejrzewał figla. Naraz (otwór prowadzący do lochu byt w tej samej izbie) widzę, że z piwnicy wydobywa się para czerwonych rąk. Ręce te opierają się o podłogę i tuż za nimi ukazuje się głowa Stacha raz i drugi. Goście i chłopcy w śmiech. - Aha! - zawołał jeden stołownik - widzisz, jak trudno bez schodów wyjść z piwnicy? A tobie zachciewa się od razu skoczyć ze sklepu do uniwersytetu!... Wyjdźże, kiedyś taki mądry... Stach z głębi znowu wysunął ręce, znowu chwycił się za krawędź otworu i wydźwignął się do połowy ciała. Myślałem, że mu krew tryśnie z policzków. - Jak on się wydobywa... Pysznie się wydobywa!... - zawołał drugi stołownik. Stach zaczepił nogą o podłogę i po chwili byt już w pokoju.”" },
+
+        { x: 27.0, y: 24.3, title: "Teatr Wielki - Opera Narodowa", text: "TOM I rozdział XVII pt. Kiełkowanie rozmaitych zasiewów i złudzeń: „Siedział on [Wokulski] w czwartym rzędzie i wpatrywał się bynajmniej nie w Rossiego, ale w lożę, którą zajmowała panna Izabela z panem Tomaszem i hrabiną. Rzecki parę razy w życiu widział ludzi zamagnetyzowanych i zdawało mu się, że Wokulski ma taki wyraz fizjonomii, jak gdyby był zamagnetyzowany przez ową lożę” „Lecz gdy wyszedł Makbet-Rossi, przysłaniała twarz do połowy wachlarzem i cudownymi, rozmarzonymi oczyma zdawała się pożerać aktora. (...) Kiedy piękne oblicze panny Izabeli wyrażało najwyższy zachwyt, wtedy Wokulski pocierał sobie ręką wierzch głowy. A wówczas, jakby na komendę, z galerii i z paradyzu odzywały się gwałtowne oklaski i wrzaskliwe okrzyki: »Brawo, brawo Rossi!…«”  „Panna Izabela opuściła teatr, przeszła plac Teatralny i lekkim krokiem wbiegła na ratuszową wieżę, a Wokulski za nią, wciąż patrząc jak człowiek zamagnetyzowany. A potem z ganku ratuszowej wieży panna Izabela, uniósłszy się jak ptak, przepłynęła na gmach teatralny, a Wokulski, chcąc lecieć za nią, runął z wysokości dziesięciu pięter na ziemię”" },
+
+        { x: 42.7, y: 21.7, title: "Kościół Karmelitów", text: "TOM I rozdział IX pt. Kładki, na których spotykają się ludzie różnych światów: „Wszedł do kościoła i zaraz na wstępie znowu uderzył go nowy widok. Kilka żebraczek i żebraków błagało o jałmużnę, którą Bóg zwróci litościwym w życiu przyszłym. Jedni z pobożnych całowali nogi Chrystusa umęczonego przez państwo rzymskie, inni w progu upadłszy na kolana wznosili do góry ręce i oczy, jakby zapatrzeni w nadziemską wizję. Kościół pogrążony był w ciemności, której nie mógł rozproszyć blask kilkunastu świec płonących w srebrnych kandelabrach. Tu i ówdzie na posadzce świątyni widać było niewyraźne cienie ludzi leżących krzyżem albo zgiętych ku ziemi, jakby kryli się ze swoją pobożnością pełną pokory. Patrząc na te ciała nieruchome można było myśleć, że na chwilę opuściły je dusze i uciekły do jakiegoś lepszego świata. „Rozumiem teraz - pomyślał Wokulski - dlaczego odwiedzanie kościołów umacnia wiarę. Tu wszystko urządzone jest tak, że przypomina wieczność.” Od pogrążonych w modlitwie cieniów wzrok jego pobiegł ku światłu. I zobaczył w różnych punktach świątyni stoły okryte dywanami, na nich tace pełne bankocetli, srebra i złota, a dokoła nich damy siedzące na wygodnych fotelach, odziane w jedwab, pióra i aksamity, otoczone wesołą młodzieżą. Najpobożniejsze pukały na przechodniów, wszystkie rozmawiały i bawiły się jak na raucie. Zdawało się Wokulskiemu, że w tej chwili widzi przed sobą trzy światy. Jeden (dawno już zeszedł z ziemi), który modlił się i dźwigał na chwałę Boga potężne gmachy. Drugi, ubogi i pokorny, który umiał modlić się, lecz wznosił tylko lepianki, i - trzeci, który dla siebie murował pałace, ale już zapomniał o modlitwie i z domów bożych zrobił miejsce schadzek; jak niefrasobliwe ptaki, które budują gniazda i zawodzą pieśni na grobach poległych bohaterów. W głębi kaplicy, w powodzi światła, leżał biały Chrystus otoczony kwiatami. Zdawało się Wokulskiemu, że pod wpływem migotliwych płomyków twarz jego ożywia się przybierając wyraz groźby albo litości i łaski. Kiedy pozytywka wygrywała Łucję z Lamermooru albo kiedy ze środka kościoła doleciał stukot pieniędzy i francuskie wykrzykniki, oblicze Chrystusa ciemniało. Ale kiedy do krucyfiksu zbliżył się jaki biedak i opowiadał Ukrzyżowanemu swoje strapienia, Chrystus otwierał martwe usta i w szmerze fontanny powtarzał błogosławieństwa i obietnice… „Błogosławieni cisi... Błogosławieni smutni...” Do tacy podeszła młoda, uróżowana dziewczyna. Położyła srebrną czterdziestówkę, ale nie śmiała dotknąć krzyża. Klęczący obok z niechęcią patrzyli na jej aksamitny kaftanik i jaskrawy kapelusz. Ale gdy Chrystus szepnął: „Kto z was jest bez grzechu, niech rzuci na nią kamieniem”, padła na posadzkę i ucałowała jego nogi jak niegdyś Maria Magdalena. Machinalnie spojrzał na środek kościoła. Przy bliższym stoliku hrabina drzemała, a panna Izabela ziewała, przy dalszym trzy nie znane mu damy zaśmiewały się z opowiadań jakiegoś wykwintnego młodzieńca. „Inny świat... inny świat!... - myślał Wokulski. - Co za fatalność popycha mnie w tamtą stronę?”" },
+
+        { x: 23.9, y: 30.8, title: "Ogród Saski", text: "TOM I Rozdział XIII pt. Wielkopańskie zabawy: „Ranne godziny wlokły mu się, jakby do nich zaprzężono woły. Wokulski na chwilę tylko wpadł do sklepu, przy obiedzie nie mógł jeść, potem poszedł do Saskiego Ogrodu ciągle myśląc: »Czy klacz wygra i czy go panna Izabela pokocha?…« Przemógł się jednak i wyjechał z domu dopiero około piątej”" },
+
+        { x: 35.9, y: 27.6, title: "Hotel Europejski", text: "Tom I rozdział X pt. Pamiętnik starego subiekta: „Główna uroczystość, czyli obiad, odbyła się w wielkiej sali Hotelu Europejskiego. Salę ubrano w kwiaty, ustawiono ogromne stoły w podkowę, sprowadzono muzykę i o szóstej wieczór zebrało się przeszło sto pięćdziesiąt osób. Kosztowała nas ta zabawa przeszło trzy tysiące rubli, ale widok tylu jedzących osób był zaiste okazały” „Kiedy zaś wśród ogólnej ciszy powstał książę i wypił zdrowie Stacha, kiedy zagrała muzyka, nie wiem już jaki kawałek, ale bardzo ładny, i sto pięćdziesiąt ludzi huknęło: »Niech żyje!« — miałem łzy w oczach. Pobiegłem do Wokulskiego i ściskając go szepnąłem: — Widzisz, jak cię kochają… — Lubią szampana — powiedział” „Z początku uczty wszystko odbywało się bardzo poważnie (...). Lecz im więcej wynoszono pustych butelek, tym dalej uciekała z tego zgromadzenia powaga, a w końcu — zrobił się przecie taki hałas, że wobec niego prawie oniemiała muzyka. (...) — No, i po co to wszystko?… — Po co?… — odparł patrząc na mnie błędnymi oczyma. — To tak dla panny Łęckiej…”" },
+
+        { x: 43.1, y: 26.7, title: "Brama przy ul. Karowa", text: "TOM I Rozdział VIII pt. Medytacja: „Przy bramie wiodącej tam zobaczył bosego, przewiązanego sznurami tragarza, który pił wodę prosto z wodotrysku; zachlapał się od stóp do głów, ale miał bardzo zadowoloną minę i śmiejące się oczy” FUN FAKT -Stylowa brama projektu Henryka Marconiego (1855) pełniła funkcyję wodotrysku z kranami zasilanymi przez miejskie wodociągi. Wieńczyła ją rzeźba Syreny autorstwa Konstantego Hegla. W 1898 roku, podczas poszerzania ulicy Karowej, bramę rozebrano, a figurę Syreny przeniesiono na budynek przy ul. Lipowej 2." },
+
+        { x: 37.8, y: 29.6, title: "Kamienica Beyera", text: "Uwaga maturalna: Nazwa „Kamienica Beyera” pochodzi z przypisu redakcyjnego do tekstu powieści, wyjaśniającego historyczną lokalizację pierwotnego sklepu Mincla i Wokulskiego. Sam budynek został zniszczony w 1944 roku podczas powstania warszawskiego, a jego ruiny rozebrano w 1946 r." },
+
+        { x: 39.5, y: 31.8, title: "Sklep galanteryjny J. Mincel , S. Wokulski", text: "Tom I rozdział I pt. Jak wygląda firma J. Mincel i S. Wokulski przez szkło butelek?: „W początkach roku 1878, kiedy świat polityczny zajmował się pokojem san-stefańskim, wyborem nowego papieża albo szansami europejskiej wojny, warszawscy kupcy tudzież inteligencja pewnej okolicy Krakowskiego Przedmieścia niemniej gorąco interesowała się przyszłością galanteryjnego sklepu pod firmą J. Mincel i S. Wokulski.” Tom I rozdział III pt. Pamiętnik starego subiekta: „Wnętrze sklepu wyglądało jak duża piwnica, której końca nigdy nie mogłem dojrzeć z powodu ciemności. (...) Nawet sklepienie było zajęte. Wisiały tam długie szeregi pęcherzy naładowanych gorczycą i farbami, ogromna lampa z daszkiem (...) wreszcie — wypchany krokodylek…”„...oddała rękę swoją Stasiowi Wokulskiemu, który tym sposobem odziedziczył interes prowadzony przez dwa pokolenia Minclów” Tom I rozdział II pt. Rządy starego subiekta:„Pod oknem stał ten sam czarny stół obity suknem, także niegdyś zielonym, dziś tylko poplamionym. Na nim wielki czarny kałamarz wraz z wielką czarną piaseczniczką (...) para mosiężnych lichtarzy do świec łojowych, których już nikt nie palił... Żelazne łóżko z bardzo cienkim materacem, nad nim nigdy nie używana dubeltówka, pod nim pudło z gitarą...” TOM I rozdział X pt. Pamiętnik starego subiekta: „W początkach maja wprowadziliśmy się do nowego sklepu, który obejmuje pięć ogromnych salonów. W pierwszym pokoju, na lewo, mieszczą się same ruskie tkaniny: perkale, kretony, jedwabie i aksamity. Drugi pokój zajęty jest w połowie na te same tkaniny, a w połowie na drobiazgi do ubrania służące: kapelusze, kołnierzyki, krawaty, parasolki. W salonie frontowym najwykwintniejsza galanteria: brązy, majoliki, kryształy, kość słoniowa. Następny pokój na prawo lokuje zabawki tudzież wyroby z drzewa i metalów, a w ostatnim pokoju na prawo są towary z gumy i skóry.”" },
+
+        { x: 40.7, y: 34.1, title: "Kamienica Józefa Grodzickiego / Krakowskie Przedmieście 7", text: "Tom I Rozdział VII pt. Gołąb wychodzi na spotkanie węża: „Na Krakowskim już z daleka zobaczyła szyld z napisem: J. Mincel i S. Wokulski, a o jeden dom bliżej nowy, jeszcze nie wykończony sklep o pięciu oknach frontu, z lustrzanymi szybami”" },
+
+        { x: 50.0, y: 33.5, title: "Kamienica Franciszka Staniszewskiego / Krakowskie Przedmieście 4 ", text: "Tom I rozdział XV pt. W jaki sposób duszę ludzką szarpie namiętność, a w jaki rozsądek: „Wszystko to roiło się między dwoma długimi ścianami kamienic pstrej barwy, nad którymi górowały wyniosłe fronty świątyń. Na obu zaś końcach ulicy, niby pilnujące miasta szyldwachy, wznosiły się dwa pomniki. Z jednej strony król Zygmunt, stojący na olbrzymiej świecy, pochylał się ku Bernardynom, widocznie pragnąc coś zakomunikować przechodniom. Z drugiego końca nieruchomy Kopernik, z nieruchomym globusem w ręku, odwrócił się tyłem do słońca, które na dzień wychodziło spoza domu Karasia, wznosiło się nad pałac Towarzystwa Przyjaciół Nauk i kryło się za dom Zamoyskich jakby na przekór aforyzmowi: »Wstrzymał słońce, wzruszył ziemię.« Wokulski, który w tym właśnie kierunku wyglądał ze swego balkonu, mimo woli westchnął przypomniawszy sobie, że jedynymi wiernymi przyjaciółmi astronoma byli tragarze i tracze...”" },
+
+        { x: 42.9, y: 37.9, title: "Kościół Świętego Krzyża", text: "Tom II Rozdział I pt. Pamiętnik starego subiekta: „— Niechże pan zaniesie do Św. Krzyża te dziewięć rubli na trzy wotywy, na intencję, ażeby Bóg go upamiętał… Nie — dodała po chwili nieco zmienionym głosem. — Niech będzie jedna wotywa za niego, a dwie za duszę mojej nieszczęśliwej dzieweczki”" },
+
+        { x: 50.3, y: 40.1, title: "Pomnik Mikołaja Kopernika", text: "" },
+
+        { x: 66.5, y: 31.8, title: "Powiśle", text: "TOM I rozdział VIII pt. Medytacje: „Na Karowej odetchnął. Zdawało mu się, że jest jedną z plew, które już odrzucił młyn wielkomiejskiego życia, i że powoli spływa sobie gdzieś na dół tym rynsztokiem zaciśniętym odwiecznymi murami. Zatrzymał się w połowie drogi i patrzył na ciągnącą się u jego stóp dzielnicę między Nowym Zjazdem i Tamką. Uderzyło go podobieństwo do drabiny, której jeden bok stanowi ulica Dobra, drugi - linia od Garbarskiej do Topieli, a kilkanaście uliczek poprzecznych formują jakby szczeble. „Nigdzie nie wejdziemy po tej leżącej drabinie - myślał. - To chory kąt, dziki kąt.” I rozważał pełen goryczy, że ten płat ziemi nadrzecznej, zasypany śmieciem z całego miasta, nie urodzi nic nad parterowe i jednopiętrowe domki barwy czekoladowej i jasnożółtej, ciemnozielonej i pomarańczowej. Nic, oprócz białych i czarnych parkanów, otaczających puste place, skąd gdzieniegdzie wyskakuje kilkupiętrowa kamienica jak sosna, która ocalała z wyciętego lasu, przestraszona własną samotnością. „Nic, nic!...” - powtarzał tułając się po uliczkach, gdzie widać było rudery zapadnięte niżej bruku, z dachami porosłymi mchem, lokale z okiennicami dniem i nocą zamkniętymi na sztaby, drzwi zabite gwoździami, naprzód i w tył powychylane ściany, okna łatane papierem albo zatkane łachmanem. Szedł, przez brudne szyby zaglądał do mieszkań i nasycał się widokiem szaf bez drzwi, krzeseł na trzech nogach, kanap z wydartym siedzeniem, zegarów o jednej skazówce, z porozbijanymi cyferblatami. Szedł i cicho śmiał się na widok wyrobników wiecznie czekających na robotę, rzemieślników, którzy trudnią się tylko łataniem starej odzieży, przekupek, których całym majątkiem jest kosz zeschłych ciastek - na widok obdartych mężczyzn, mizernych dzieci i kobiet niezwykle brudnych. „Oto miniatura kraju - myślał - w którym wszystko dąży do spodlenia i wytępienia rasy. Jedni giną z niedostatku, drudzy z rozpusty. Praca odejmuje sobie od ust, ażeby karmić niedołęgów; miłosierdzie hoduje bezczelnych próżniaków, a ubóstwo nie mogące zdobyć się na sprzęty otacza się wiecznie głodnymi dziećmi, których największą zaletą jest wczesna śmierć. Tu nie poradzi jednostka z inicjatywą, bo wszystko sprzysięgło się, ażeby ją spętać i zużyć w pustej walce - o nic.” Wokulski doszedł do brzegu Wisły i zdumiał się. Na kilkumorgowej przestrzeni wznosił się tu pagórek najobrzydliwszych śmieci, cuchnących, nieomal ruszających się pod słońcem, a o kilkadziesiąt kroków dalej leżały zbiorniki wody, którą piła Warszawa. „O, tutaj - myślał - jest ognisko wszelkiej zarazy. Co człowiek dziś wyrzuci ze swego mieszkania, jutro wypije; później przenosi się na Powązki i z drugiej znowu strony miasta razi bliźnich pozostalych przy życiu. Bulwar tutaj, kanały i woda źródlana na górze i - można by ocalić rokrocznie kilka tysięcy ludzi od śmierci, a kilkadziesiąt tysięcy od chorób... Niewielka praca, a zysk nieobliczony; natura umie wynagradzać.” Na stoku i w szczelinach obmierzłego wzgórza spostrzegł niby postacie ludzkie. Było tu kilku drzemiących na słońcu pijaków czy złodziei, dwie śmieciarki i jedna kochająca się para, złożona z trędowatej kobiety i suchotniczego mężczyzny, który nie miał nosa. Zdawało się, że to nie ludzie, ale widma ukrytych tutaj chorób, które odziały się w wykopane w tym miejscu szmaty. Wszystkie te indywidua zwietrzyły obcego człowieka; nawet śpiący podnieśli głowy i z wyrazem zdziczałych psów przypatrywali się gościowi. Nad samym brzegiem Wisły leżał stos belek. Wokulski uczuł znużenie, siadł i patrzył. W spokojnej powierzchni wody odbijała się Saska Kępa, już zieleniejąca, i praskie domy z czerwonymi dachami; na środku rzeki stała nieruchoma berlinka.” " },
+
+        { x: 44.1, y: 53.1, title: "Dworzec Kolei Warszawsko-Wiedeńskiej", text: "Tom I Rozdział XIX pt. Pierwsze ostrzeżenie: „Na dworcu Kolei Wiedeńskiej złapał nas doktór Szuman. — Jedziesz do Paryża? — zapytał Stacha. — A ty skąd wiesz? — O, ja wszystko wiem. Nawet to, że tym samym pociągiem jedzie pan Starski. Stach wstrząsnął się. — Co to za człowiek? — rzekł do doktora. — Próżniak, bankrut… jak zresztą wszyscy oni — odparł Szuman. [...] Zaczęto dzwonić i świstać. Podróżni tłoczyli się do wagonów; Stach uścisnął nas za ręce. — Kiedy wracasz? — zapytał go doktór. — Chciałbym… nigdy — odpowiedział Stach i siadł do pustego przedziału pierwszej klasy” Tom II Rozdział XV pt. Pamiętnik starego subiekta: „Kupiłem bilet do Krakowa, na Dworcu Warszawsko-Wiedeńskim siadłem do wagonu i kiedy już było po trzecim dzwonku, wyskoczyłem… Nie mogę ani na chwilę rozstać się z Warszawą i ze sklepem… Żyć bym bez nich nie potrafił…” Tom II Rozdział XIV pt. Tempus fugit, aeternitas manet: „I w tej chwili, pierwszy raz od czasu jak znał pannę Izabelę, przeleciały mu przez myśl straszne wyrazy: »fałsz!… fałsz!…« Przycisnął się do ławki wagonu, patrzył w szybę i — słuchał” „— I ten medalion — drwił Starski — jest całym prezentem przedślubnym?… Niezbyt hojny narzeczony: kocha jak trubadur, ale…— Zapewniam cię — przerwała panna Izabela — że oddałby mi cały majątek…— Bierzże go, kuzynko, i mnie pożycz ze sto tysięcy… A cóż, znalazła się ta cudowna blaszka?…— Właśnie że nie, i jestem bardzo zmartwiona. Boże, gdyby on się kiedy dowiedział…— Czy o tym, że zgubiliśmy jego blaszkę, czy że szukaliśmy medalionu? — szepnął Starski przytulając się do jej ramienia” „— Wiesz, że jesteś zuchwały!… — mówiła przyciszonym głosem panna Izabela.— To właśnie stanowi moją siłę — odparł Starski. — Zlituj się… Ależ on może spojrzeć!… Znienawidzę cię…— Będziesz szaleć za mną, bo nikt nie zdobyłby się na to… Kobiety lubią demonów…” „— Niech pana to nie gniewa, panie Starski, co powiem — rzekł głuchym głosem. — Pan myli się co do siebie… W panu jest tyle demona, ile trucizny w zapałce… I wcale pan nie posiada szampańskich własności… Pan ma raczej własności starego sera, co to podnieca chore żołądki, ale prosty smak może pobudzić do wymiotów…” „— Farewell, miss Iza, farewell! — zawołał Wokulski. Pociąg ruszył. Panna Izabela rzuciła się na ławkę naprzeciw ojca; Starski odszedł w drugi kąt saloniku” „Pociąg z wolna zbliżał się. Wokulski nie zdając sobie sprawy z tego, co robi, upadł na szyny. Drżał, zęby mu szczękały, schwycił się oburącz podkładów, miał usta pełne piasku…” „— Panie… wielmożny panie… ja przecież jestem Wysocki…— Wysocki?… Wysocki?… — powtórzył Wokulski. — Kłamiesz, Wysocki jest w Warszawie…— Ale ja jego brat, dróżnik. Przecież mi wielmożny pan sam miejsce tu wyrobił jeszcze w przeszłym roku, po Wielkanocy…”" },
+
+        { x: 63.8, y: 61.5, title: "Kościół św. Aleksandra", text: "Tom I rozdział XVI pt. „Ona” — „on” — i ci inni: „I tak szedł przez całe Aleje, plac Aleksandra, przez Nowy Świat, ciągle upatrując kogoś i ciągle doznając zawodu. »Więc to jest moje szczęście? — myślał. — Nie pragnę tego, co mógłbym mieć, a szarpię się za tym, czego nie mam…«” Tom II rozdział I pt. Pamiętnik starego subiekta: „Ha! trudno… Posyłam tedy do odprasowania mój kapelusz, płacę dwa złote, na wszelki wypadek biorę do kieszeni krócicę i maszeruję gdzieś aż za kościół Aleksandra. Patrzę: dom żółty o trzech piętrach, numer ten sam, ba!… nawet już na tabliczce znajduję nazwisko Stanisława Wokulskiego…”" },
+
+        { x: 54.8, y: 65.0, title: "Dawna kamienica Bolesława Prusa / Wilcza 12 ", text: "...„”" },
+
+        { x: 46.6, y: 72.4, title: "Kamienica Łęckich / Krucza 24 ", text: "Tom I Rozdział XII pt. Wędrówki za cudzymi interesami: „Dom był trzypiętrowy; miał parę żelaznych balkonów i każde piętro zbudowane w innym stylu. Za to w architekturze bramy panował tylko jeden motyw, mianowicie: wachlarz. Górna część wrót miała formę rozłożonego wachlarza (...). Na obu skrzydłach bramy były wyrzeźbione ogromne prostokąty, które w rogach również ozdobiono do połowy otwartymi wachlarzami. Na cenniejszym jednak upiększeniem bramy były umieszczone w pośrodku jej skrzydeł dwie rzeźby przedstawiające główki gwoździ, ale tak wielkich, jakby nimi była przytwierdzona brama do kamienicy, a kamienica do Warszawy”" },
+
+        { x: 33.4, y: 95.9, title: "Pole Mokotowskie", text: "Tom I Rozdział XIII pt. Wielkopańskie zabawy: „Przy rogatce zaś utworzył się formalny zator i musiał czekać z kwadrans, pożerany niecierpliwością, zanim ostatecznie powóz jego wydostał się na Mokotowskie pola” „...czytał, że w trzeciej gonitwie biega klacz Sułtanka po Alim i Klarze, należąca do X. X., jeżdżona przez dżokeja Yunga w żółtej kurtce z niebieskimi rękawami” „— Brawo Yung!… Brawo Wokulski!… Klacz idzie jak woda!… Brawo!… Dzwonek. Yung wygrał. [...] Wśród tłumu zbudził się szalony zapał dla Wokulskiego. Jeszcze żaden wyścig tak nie rozruszał widzów: cieszono się, że warszawski kupiec pobił dwu hrabiów” „Wokulski z paczką banknotów zwrócił się do panny Izabeli: — Czy pozwoli pani, ażebybym na jej ręce złożył to dla ochrony pań?… Panna Izabela przyjęła paczkę z uśmiechem i prześlicznym spojrzeniem” „Blady z gniewu zbliżył się do powozu i wyciągając rękę do panny Izabeli zawołał po francusku: — Cieszę się, kuzynko, że twoi wielbiciele triumfują… Przykro mi tylko, że na mój koszt…”" },
+
+        { x: 76.8, y: 87.7, title: "Ogród Botaniczny", text: "Tom I Rozdział XI pt. Stare marzenia i nowe znajomości: „Weszli na wzgórze, skąd widać studnię zwaną Okrąglakiem. Ze wszystkich stron otaczali ich spacerujący, ale Ochocki nie krębował się ich obecnością i wskazawszy kapeluszem jedną z ławek, mówił: — Dużo czytałem, że szczęśliwy jest człowiek, który ma wielkie aspiracje. To kłamstwo. Ja przecież mam niepowszednie pragnienia, które jednak robią mnie śmiesznym i zrażają do mnie najbliższych” „Zapomniałem o pięknej kuzynce, a zacząłem myśleć o machinach latających. A ponieważ myśląc muszę chodzić, więc wstałem z ławki i bez pożegnania opuściłem kuzynkę!…” „— A gdybyś pan je nawet przypiął, to co?… — spytał Wokulski. — Sława, jakiej nie dosięgnął jeszcze żaden człowiek — odparł Ochocki. — To moja żona, to moja kobieta… Bądź pan zdrów, muszę iść… Uścisnął Wokulskiemu rękę, zbiegł ze wzgórza i zniknął między drzewami” „Na Ogród Botaniczny i na Łazienki zapadał już mrok. »Wariat czy geniusz?… — szepnął Wokulski czując, że sam jest w najwyższym stopniu rozstrojony. — A jeżeli geniusz?…« Wstał i poszedł w głąb ogrodu, między spacerujących ludzi” Tom II  Rozdział XIII pt. Pogodzeni małżonkowie: „W Ogrodzie Botanicznym było cicho i prawie pusto, Wokulski wyminął studnię i z wolna począł wstępować na ocieniony pagórek, na którym przeszło rok temu po raz pierwszy rozmawiał z Ochockim”" },
+
+        { x: 87.6, y: 96.0, title: "Łazienki Królewskie", text: "TOM I rozdział XIV pt.Dziewicze marzenia „Panna Izabela kilka razy spotkała Wokulskiego w Łazienkach i nawet raczyła odpowiadać na jego ukłony. Między zielonymi drzewami i obok posągów grubianin ten wydał jej się znowu innym aniżeli za kontuarem sklepu. Gdybyż on miał dobra ziemskie, z parkiem, pałacem, sadzawką?… Prawda, że dorobkiewicz, ale podobno szlachcic, synowiec oficera…”. TOM II rozdział XVII pt.Dusza w letargu „Przeszedł nad stawem i obojętnie przypatrywał się czółnom i łabędziom. Potem skręcił w aleję ku Pomarańczarni, na której byli wtedy oboje, i powiedział sobie, że… zje śniadanie z apetytem. Ale gdy wracał tą samą drogą, opanował go gniew i z dziką radością złośliwego dzieciaka poprzednie ślady własnych stóp zacierał nogą”" }
+    ];
+
+    const container = document.getElementById('map-container');
+    const pawn = document.getElementById('pawn');
+    const viewport = document.getElementById('viewport');
+    const legendList = document.getElementById('legend-list');
+    const poisLayer = document.getElementById('pois-layer');
+    const sidePanel = document.getElementById('side-panel');
+
+    let scale = 1, isDragging = false, startX, startY, x = 0, y = 0;
+    let touchStartDist = 0, initialScale = 1;
+
+    function init() {
+        pointsOfInterest.forEach((poi, index) => {
+            const poiEl = document.createElement('div');
+            poiEl.className = 'poi-red';
+            poiEl.id = `poi-${index}`;
+            poiEl.style.left = poi.x + '%';
+            poiEl.style.top = poi.y + '%';
+
+            const shortText = poi.text.length > 100 ? poi.text.substring(0, 100) + '...' : poi.text;
+            
+            const bubble = document.createElement('div');
+            bubble.className = 'info-bubble';
+            bubble.innerHTML = `
+                <div style="font-weight: 800; font-size: 10px; color: #ef4444; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">miejsce </div>
+                <div style="font-weight: 700; font-size: 14px; color: white; margin-bottom: 6px; line-height: 1.2;">${poi.title}</div>
+                <div style="font-size: 11px; color: #94a3b8; line-height: 1.4;">${shortText}</div>
+                ${poi.text.length > 100 ? `<div class="read-more-btn" onclick="openSidePanel(${index})">Czytaj dalej</div>` : ''}
+            `;
+            poiEl.appendChild(bubble);
+
+            poiEl.onclick = (e) => { 
+                e.stopPropagation(); 
+                focusPOI(index); 
+            };
+            poisLayer.appendChild(poiEl);
+
+            const card = document.createElement('div');
+            card.className = 'place-card';
+            card.id = `place-card-${index}`;
+            card.innerHTML = `<h3 class="place-title">${poi.title}</h3>`;
+            card.onclick = () => focusPOI(index);
+            legendList.appendChild(card);
+        });
+    }
+
+    function removeOrphans(text) {
+        let oldText;
+        do {
+            oldText = text;
+            text = text.replace(/(^|[\s,„"—>;]+)([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]{1,2})\s+/g, '$1$2&nbsp;');
+        } while (text !== oldText);
+        
+        return text;
+    }
+function formatLalkaText(rawText) {
+    if (!rawText) return "";
+
+    // 1. (TOM / Tom / tom)
+    if (!rawText.match(/(?:TOM|Tom|tom)\s+[IVXLCDM]+/i)) {
+        return `<div class="quote-content">${removeOrphans(rawText)}</div>`;
+    }
+
+    // 2. "Tom I", "TOM II"
+    const sections = rawText.split(/(?=(?:TOM|Tom|tom)\s+[IVXLCDM]+)/i);
+
+    return sections.map(section => {
+        section = section.trim();
+        if (!section) return "";
+
+        // 3.  (I, III, XVIII),  "pt."
+        const headerMatch = section.match(/((?:TOM|Tom|tom)\s+[IVXLCDM]+\s+rozdział\s+[IVXLCDM0-9]+(?:\s*pt\.)?)/i);
+
+        if (headerMatch) {
+            const headerPart = headerMatch[0];
+            const parts = headerPart.split(/rozdział/i);
+            const volumeStr = parts[0].trim().toUpperCase(); //  ("TOM I")
+            const chapterNumStr = "Rozdział " + parts[1].replace(/pt\./i, "").trim();
+
+            let rest = section.substring(headerPart.length).trim();
+            if (rest.startsWith("pt.")) {
+                rest = rest.substring(3).trim();
+            }
+
+            let chapterTitle = "";
+            let quoteText = "";
+
+            if (rest.includes(":")) {
+                const splitPoint = rest.indexOf(":");
+                chapterTitle = rest.substring(0, splitPoint).trim();
+                quoteText = rest.substring(splitPoint + 1).trim();
+            } else if (rest.includes("„")) {
+                const splitPoint = rest.indexOf("„");
+                chapterTitle = rest.substring(0, splitPoint).trim();
+                quoteText = rest.substring(splitPoint).trim();
+            } else {
+                quoteText = rest;
+            }
+
+            chapterTitle = chapterTitle.replace(/^[:„\s]+|[:\s]+$/g, '');
+            
+            if (quoteText && !quoteText.startsWith("„") && !quoteText.startsWith("Uwaga") && !quoteText.startsWith("FUN")) {
+                quoteText = "„" + quoteText;
+            }
+
+            const titleHtml = chapterTitle ? ` pt. ${removeOrphans(chapterTitle)}` : '';
+
+            return `
+                <div class="text-block">
+                    <div class="volume-header">${volumeStr}</div>
+                    <div class="chapter-header">${removeOrphans(chapterNumStr)}${titleHtml}</div>
+                    <div class="quote-content">${removeOrphans(quoteText)}</div>
+                </div>
+            `;
+        }
+
+        return `<div class="text-block"><div class="quote-content">${removeOrphans(section)}</div></div>`;
+    }).join('');
+}
+    function openSidePanel(index) {
+        const poi = pointsOfInterest[index];
+        document.getElementById('panel-title').innerText = poi.title;
+        document.getElementById('panel-text').innerHTML = formatLalkaText(poi.text);
+        sidePanel.classList.add('open');
+    }
+
+    function closeSidePanel() {
+        sidePanel.classList.remove('open');
+    }
+
+    function focusPOI(index) {
+        const poi = pointsOfInterest[index];
+        
+        pawn.style.left = poi.x + '%';
+        pawn.style.top = poi.y + '%';
+        
+        document.querySelectorAll('.poi-red').forEach(p => p.classList.remove('active'));
+        const poiEl = document.getElementById(`poi-${index}`);
+        if (poiEl) poiEl.classList.add('active');
+
+        document.querySelectorAll('.place-card').forEach(c => c.classList.remove('active'));
+        const activeCard = document.getElementById(`place-card-${index}`);
+        if (activeCard) {
+            activeCard.classList.add('active');
+            activeCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    function handleMapClick(e) {
+        const rect = e.target.getBoundingClientRect();
+        const clickX = ((e.clientX - rect.left) / rect.width) * 100;
+        const clickY = ((e.clientY - rect.top) / rect.height) * 100;
+        
+        pawn.style.left = clickX + '%';
+        pawn.style.top = clickY + '%';
+        
+        document.querySelectorAll('.poi-red').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.place-card').forEach(c => c.classList.remove('active'));
+        closeSidePanel();
+    }
+
+    function zoom(delta) { scale = Math.min(Math.max(0.4, scale + delta), 4); updateTransform(); }
+    function resetMap() { scale = 1; x = 0; y = 0; updateTransform(); }
+    function updateTransform() { container.style.transform = `translate(${x}px, ${y}px) scale(${scale})`; }
+
+    // --- OBSŁUGA MYSZKI (KOMPUTERY) ---
+    viewport.onmousedown = (e) => {
+        if(e.target.closest('.sidebar') || e.target.closest('.controls-ui') || e.target.closest('.side-panel')) return;
+        isDragging = true; startX = e.clientX - x; startY = e.clientY - y;
+    };
+    window.onmousemove = (e) => { if (isDragging) { x = e.clientX - startX; y = e.clientY - startY; updateTransform(); } };
+    window.onmouseup = () => isDragging = false;
+    viewport.addEventListener('wheel', (e) => { e.preventDefault(); zoom(e.deltaY > 0 ? -0.1 : 0.1); }, { passive: false });
+
+    // --- OBSŁUGA DOTYKU (TELEFONY I TABLETY) ---
+    viewport.addEventListener('touchstart', (e) => {
+        if(e.target.closest('.sidebar') || e.target.closest('.controls-ui') || e.target.closest('.side-panel')) return;
+        
+        if (e.touches.length === 1) {
+            isDragging = true;
+            startX = e.touches[0].clientX - x;
+            startY = e.touches[0].clientY - y;
+        } else if (e.touches.length === 2) {
+            isDragging = false;
+            touchStartDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            initialScale = scale;
+        }
+    }, { passive: false });
+
+    viewport.addEventListener('touchmove', (e) => {
+        if(e.target.closest('.sidebar') || e.target.closest('.controls-ui') || e.target.closest('.side-panel')) return;
+        
+        if (e.touches.length === 1 && isDragging) {
+            e.preventDefault();
+            x = e.touches[0].clientX - startX;
+            y = e.touches[0].clientY - startY;
+            updateTransform();
+        } else if (e.touches.length === 2) {
+            e.preventDefault();
+            const currentDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            if (touchStartDist > 0) {
+                const scaleFactor = currentDist / touchStartDist;
+                scale = Math.min(Math.max(0.4, initialScale * scaleFactor), 4);
+                updateTransform();
+            }
+        }
+    }, { passive: false });
+
+    viewport.addEventListener('touchend', (e) => {
+        if (e.touches.length < 2) touchStartDist = 0;
+        if (e.touches.length === 0) isDragging = false;
+    });
+
+    window.onload = init;
+</script>
+
+</body>
+</html>
